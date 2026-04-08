@@ -14,6 +14,28 @@ Code review is a high-value, real-world software engineering activity. This envi
 
 ---
 
+## Project Structure
+
+```
+.
+├── src/
+│   ├── main.py        # FastAPI app — /reset, /step, /state endpoints
+│   ├── episode.py     # Episode lifecycle manager
+│   ├── grader.py      # Deterministic scoring function
+│   ├── tasks.py       # Task registry (easy / medium / hard)
+│   └── models.py      # Pydantic v2 data models
+├── server/
+│   └── app.py         # Entry point for multi-mode deployment
+├── tests/             # 59 unit + property-based tests (Hypothesis)
+├── inference.py       # Baseline LLM agent script
+├── openenv.yaml       # OpenEnv metadata
+├── Dockerfile
+├── pyproject.toml
+└── uv.lock
+```
+
+---
+
 ## Action Space
 
 The agent submits an `Action` with the following fields:
@@ -45,13 +67,23 @@ Each step returns an `Observation` with:
 ## Tasks
 
 ### Easy — Off-by-One Error
-A PR introduces a loop with an obvious off-by-one error. The correct decision is `request_changes`. The agent must identify the boundary condition bug in the review body.
+A PR adds pagination to a user list endpoint but uses `users[start:end + 1]` — an off-by-one error that returns one extra record per page.
+
+- Correct decision: `request_changes`
+- Key terms to mention: `off-by-one`, `end + 1`
 
 ### Medium — SQL Injection Vulnerability
-A PR adds a database query that directly interpolates user input, creating a SQL injection risk. The correct decision is `request_changes`. The agent must identify the vulnerable file with an inline comment and mention parameterized queries.
+A PR implements a user search using a raw f-string SQL query: `f"SELECT * FROM users WHERE username LIKE '%{username_query}%'"` — directly interpolating user input.
+
+- Correct decision: `request_changes`
+- Key terms to mention: `sql injection`, `parameterized`, `f-string`, `user input`
+- Must include an inline comment on `api/search.py`
 
 ### Hard — N+1 Query Performance Issue
-A PR looks architecturally sound but introduces a subtle N+1 query pattern in a data access layer. The correct decision is `request_changes`. The agent must identify the performance anti-pattern and suggest eager loading or batching.
+A PR renders order history by looping over orders and fetching each product individually inside the loop — a classic N+1 query pattern.
+
+- Correct decision: `request_changes`
+- Key terms to mention: `n+1`, `select_related`, `prefetch_related`, `query per`, `eager loading`
 
 ---
 
@@ -79,6 +111,27 @@ Intermediate rewards are given for `comment` actions that correctly identify the
 | `POST` | `/step` | Submit a review action. Returns `{observation, reward, done, info}` |
 | `GET` | `/state` | Get current episode state (read-only) |
 | `GET` | `/` | Environment info and API description |
+
+### Example: Full Episode
+
+```bash
+# 1. Start episode
+curl -X POST http://localhost:7860/reset \
+  -H "Content-Type: application/json" \
+  -d '{"difficulty": "easy"}'
+
+# 2. Submit review
+curl -X POST http://localhost:7860/step \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "request_changes",
+    "review_body": "There is an off-by-one error on line using end + 1 which returns an extra record.",
+    "inline_comments": []
+  }'
+
+# 3. Check state
+curl http://localhost:7860/state
+```
 
 ---
 
@@ -115,6 +168,13 @@ export HF_TOKEN=your-hf-token
 python inference.py
 ```
 
+Output format:
+```
+[START] task=code-review-easy env=openenv-code-review model=gpt-4.1-mini
+[STEP]  step=1 action=request_changes reward=0.72 done=true error=null
+[END]   success=true steps=1 rewards=0.72
+```
+
 ### Baseline Performance (gpt-4.1-mini)
 
 | Task | Score |
@@ -133,3 +193,4 @@ python inference.py
 | `API_BASE_URL` | `http://localhost:7860` | No | LLM API endpoint |
 | `MODEL_NAME` | `gpt-4.1-mini` | No | Model identifier |
 | `HF_TOKEN` | — | Yes | Hugging Face API token |
+| `LOCAL_IMAGE_NAME` | — | No | Local Docker image name (optional) |
