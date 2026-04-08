@@ -14,6 +14,7 @@ dependencies = [
     "openai",
     "pyyaml",
     "requests",
+    "openenv-core>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -23,9 +24,12 @@ dev = [
     "httpx",
 ]
 
+[project.scripts]
+server = "server.app:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["src*", "server*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
