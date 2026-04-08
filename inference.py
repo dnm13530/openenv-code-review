@@ -19,27 +19,29 @@ from openai import OpenAI
 
 
 # ---------------------------------------------------------------------------
-# Environment variable loading — defaults required for API_BASE_URL, MODEL_NAME
+# Environment variables — defaults for API_BASE_URL and MODEL_NAME only
 # ---------------------------------------------------------------------------
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
+HF_TOKEN = os.getenv("HF_TOKEN")  # Required — no default
+# Optional: used when loading from a local Docker image
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+
 
 def load_env_vars() -> tuple[str, str, str]:
     """Return (API_BASE_URL, MODEL_NAME, HF_TOKEN). Exits with code 1 if HF_TOKEN missing."""
-    missing = []
-    api_base_url = os.environ.get("API_BASE_URL", "http://localhost:7860")
-    model_name = os.environ.get("MODEL_NAME", "gpt-4.1-mini")
-    hf_token = os.environ.get("HF_TOKEN", "")
+    api_base_url = os.getenv("API_BASE_URL", "http://localhost:7860")
+    model_name = os.getenv("MODEL_NAME", "gpt-4.1-mini")
+    hf_token = os.getenv("HF_TOKEN", "")
 
     if not hf_token:
-        missing.append("HF_TOKEN")
-
-    if missing:
         print(
-            f"Error: The following required environment variables are not set: "
-            f"{', '.join(missing)}\n"
-            f"Please set them before running this script.\n"
-            f"  API_BASE_URL  - Base URL of the OpenAI-compatible LLM endpoint (default: http://localhost:7860)\n"
-            f"  MODEL_NAME    - Name of the model to use for inference (default: gpt-4.1-mini)\n"
-            f"  HF_TOKEN      - Hugging Face API token for authentication (required)",
+            "Error: HF_TOKEN environment variable is required.\n"
+            "Please set HF_TOKEN to your Hugging Face API token before running this script.\n"
+            "  API_BASE_URL  - LLM endpoint (default: http://localhost:7860)\n"
+            "  MODEL_NAME    - Model identifier (default: gpt-4.1-mini)\n"
+            "  HF_TOKEN      - Hugging Face API token (required)",
             file=sys.stderr,
         )
         sys.exit(1)
