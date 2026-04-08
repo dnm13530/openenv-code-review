@@ -1,0 +1,24 @@
+name: openenv-code-review
+version: "1.0.0"
+description: "OpenEnv-compliant code review environment where an AI agent acts as a code reviewer"
+task_type: code_review
+action_space:
+  - approve
+  - request_changes
+  - comment
+observation_space:
+  - pr_title
+  - pr_description
+  - diff
+  - file_count
+  - additions
+  - deletions
+  - step_number
+  - task_difficulty
+  - episode_id
+difficulty_levels:
+  - easy
+  - medium
+  - hard
+tags:
+  - openenv
