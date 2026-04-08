@@ -86,9 +86,24 @@ def _score_decision(task: TaskDefinition, action: Action) -> float:
 
 
 def _matched_keywords(task: TaskDefinition, action: Action) -> list[str]:
-    """Return the list of required_keywords found (case-insensitive) in review_body."""
+    """Return the list of required_keywords found (case-insensitive) in review_body.
+
+    Uses flexible matching: a keyword matches if ANY of its words appear in the
+    review body, or if the full phrase appears. This rewards partial/synonym usage.
+    """
     body_lower = action.review_body.lower()
-    return [kw for kw in task.required_keywords if kw.lower() in body_lower]
+    matched = []
+    for kw in task.required_keywords:
+        kw_lower = kw.lower()
+        # Full phrase match
+        if kw_lower in body_lower:
+            matched.append(kw)
+            continue
+        # Any individual word in the keyword phrase (length > 3 to skip noise words)
+        words = [w for w in kw_lower.split() if len(w) > 3]
+        if words and any(w in body_lower for w in words):
+            matched.append(kw)
+    return matched
 
 
 def _score_issue_identification(task: TaskDefinition, action: Action) -> float:

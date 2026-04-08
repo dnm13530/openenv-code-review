@@ -74,6 +74,6 @@ def test_hard_task_has_four_or_more_keywords():
 
 def test_get_all_tasks_returns_all_three():
     all_tasks = get_all_tasks()
-    assert len(all_tasks) == 3
+    assert len(all_tasks) == 9
     difficulties = {t.difficulty for t in all_tasks}
     assert difficulties == {"easy", "medium", "hard"}
