@@ -5,4 +5,4 @@ openai
 pyyaml
 pytest
 hypothesis
-openenv>=0.2.0
+requests
