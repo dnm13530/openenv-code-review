@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "openenv-code-review"
+version = "1.0.0"
+description = "An OpenEnv-compliant code review environment for AI agents"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic>=2.0",
+    "openai",
+    "pyyaml",
+    "requests",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "hypothesis",
+    "httpx",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
