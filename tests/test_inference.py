@@ -15,9 +15,10 @@ from inference import build_prompt, load_env_vars, parse_llm_response
 # ---------------------------------------------------------------------------
 
 def test_missing_all_env_vars_exits(monkeypatch):
-    """HF_TOKEN missing (API_BASE_URL and MODEL_NAME have defaults) → sys.exit(1)."""
+    """API_KEY and HF_TOKEN both missing → sys.exit(1)."""
     monkeypatch.delenv("API_BASE_URL", raising=False)
     monkeypatch.delenv("MODEL_NAME", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -26,9 +27,10 @@ def test_missing_all_env_vars_exits(monkeypatch):
 
 
 def test_missing_one_env_var_exits(monkeypatch):
-    """HF_TOKEN missing → sys.exit(1)."""
+    """API_KEY and HF_TOKEN missing → sys.exit(1)."""
     monkeypatch.setenv("API_BASE_URL", "http://localhost:8000")
     monkeypatch.setenv("MODEL_NAME", "test-model")
+    monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -37,26 +39,28 @@ def test_missing_one_env_var_exits(monkeypatch):
 
 
 def test_all_env_vars_present_returns_values(monkeypatch):
-    """All env vars set → returns the three values."""
+    """API_KEY set → returns the three values."""
     monkeypatch.setenv("API_BASE_URL", "http://localhost:8000")
     monkeypatch.setenv("MODEL_NAME", "test-model")
-    monkeypatch.setenv("HF_TOKEN", "hf_abc123")
+    monkeypatch.setenv("API_KEY", "test-api-key")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
 
-    api_base_url, model_name, hf_token = load_env_vars()
+    api_base_url, model_name, api_key = load_env_vars()
     assert api_base_url == "http://localhost:8000"
     assert model_name == "test-model"
-    assert hf_token == "hf_abc123"
+    assert api_key == "test-api-key"
 
 
 def test_missing_env_var_error_message_is_descriptive(monkeypatch, capsys):
-    """Error message names HF_TOKEN as the missing required variable."""
+    """Error message names API_KEY/HF_TOKEN as the missing required variable."""
+    monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
     with pytest.raises(SystemExit):
         load_env_vars()
 
     captured = capsys.readouterr()
-    assert "HF_TOKEN" in captured.err
+    assert "API_KEY" in captured.err
 
 
 # ---------------------------------------------------------------------------

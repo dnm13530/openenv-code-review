@@ -24,23 +24,25 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 
 def load_env_vars() -> tuple[str, str, str]:
-    """Return (API_BASE_URL, MODEL_NAME, HF_TOKEN). Exits with code 1 if HF_TOKEN missing."""
+    """Return (API_BASE_URL, MODEL_NAME, api_key). Exits with code 1 if no API key found."""
     api_base_url = os.getenv("API_BASE_URL", "http://localhost:7860")
     model_name = os.getenv("MODEL_NAME", "gpt-4.1-mini")
-    hf_token = os.getenv("HF_TOKEN", "")
 
-    if not hf_token:
+    # Validator injects API_KEY; fall back to HF_TOKEN for local use
+    api_key = os.getenv("API_KEY") or os.getenv("HF_TOKEN", "")
+
+    if not api_key:
         print(
-            "Error: HF_TOKEN environment variable is required.\n"
-            "Please set HF_TOKEN to your Hugging Face API token before running this script.\n"
+            "Error: API_KEY (or HF_TOKEN) environment variable is required.\n"
             "  API_BASE_URL  - LLM endpoint (default: http://localhost:7860)\n"
             "  MODEL_NAME    - Model identifier (default: gpt-4.1-mini)\n"
-            "  HF_TOKEN      - Hugging Face API token (required)",
+            "  API_KEY       - API key injected by the validator\n"
+            "  HF_TOKEN      - Hugging Face API token (fallback for local use)",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    return api_base_url, model_name, hf_token
+    return api_base_url, model_name, api_key
 
 
 # ---------------------------------------------------------------------------
@@ -197,8 +199,8 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    api_base_url, model_name, hf_token = load_env_vars()
-    llm_client = OpenAI(base_url=api_base_url, api_key=hf_token)
+    api_base_url, model_name, api_key = load_env_vars()
+    llm_client = OpenAI(base_url=api_base_url, api_key=api_key)
 
     for difficulty in ["easy", "medium", "hard"]:
         run_episode(api_base_url, llm_client, model_name, difficulty)
