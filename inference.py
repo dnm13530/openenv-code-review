@@ -12,22 +12,16 @@ Output format (per hackathon spec):
 import json
 import os
 import sys
+import urllib.request
+import urllib.error
 from typing import Optional
 
-import requests
 from openai import OpenAI
 
 
 # ---------------------------------------------------------------------------
 # Environment variables — defaults for API_BASE_URL and MODEL_NAME only
 # ---------------------------------------------------------------------------
-
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
-HF_TOKEN = os.getenv("HF_TOKEN")  # Required — no default
-# Optional: used when loading from a local Docker image
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-
 
 def load_env_vars() -> tuple[str, str, str]:
     """Return (API_BASE_URL, MODEL_NAME, HF_TOKEN). Exits with code 1 if HF_TOKEN missing."""
@@ -47,6 +41,23 @@ def load_env_vars() -> tuple[str, str, str]:
         sys.exit(1)
 
     return api_base_url, model_name, hf_token
+
+
+# ---------------------------------------------------------------------------
+# HTTP helpers using stdlib urllib (no external dependencies)
+# ---------------------------------------------------------------------------
+
+def _http_post(url: str, body: dict, timeout: int = 30) -> dict:
+    """POST JSON to url, return parsed response dict."""
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -78,11 +89,7 @@ def build_prompt(observation: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def parse_llm_response(response_text: str) -> Optional[dict]:
-    """Parse LLM response text into an Action dict.
-
-    Returns None if the response cannot be parsed into a valid action.
-    Handles malformed JSON gracefully.
-    """
+    """Parse LLM response text into an Action dict. Returns None on failure."""
     text = response_text.strip()
 
     # Strip markdown code fences if present
@@ -112,7 +119,6 @@ def parse_llm_response(response_text: str) -> Optional[dict]:
     if data.get("decision") not in valid_decisions:
         return None
 
-    # Truncate review_body if it exceeds the limit
     if len(data.get("review_body", "")) > 4000:
         data["review_body"] = data["review_body"][:4000]
 
@@ -124,7 +130,7 @@ def parse_llm_response(response_text: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: str) -> None:
-    """Run a single episode for the given difficulty level, printing required output lines."""
+    """Run a single episode, printing required [START]/[STEP]/[END] output lines."""
     task_name = f"code-review-{difficulty}"
     step_rewards: list[float] = []
     step_count = 0
@@ -134,19 +140,13 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
     print(f"[START] task={task_name} env=openenv-code-review model={model_name}")
 
     try:
-        reset_resp = requests.post(
-            f"{env_base_url}/reset", json={"difficulty": difficulty}, timeout=30
-        )
-        reset_resp.raise_for_status()
-        observation = reset_resp.json()
-
+        observation = _http_post(f"{env_base_url}/reset", {"difficulty": difficulty})
         done = False
 
         while not done:
             step_count += 1
             prompt = build_prompt(observation)
 
-            # Call the LLM
             completion = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
@@ -163,10 +163,7 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
                 }
 
             action_str = action["decision"]
-
-            step_resp = requests.post(f"{env_base_url}/step", json=action, timeout=30)
-            step_resp.raise_for_status()
-            step_data = step_resp.json()
+            step_data = _http_post(f"{env_base_url}/step", action)
 
             observation = step_data["observation"]
             reward_val = step_data["reward"]["score"]
@@ -179,16 +176,15 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
                 f"[STEP]  step={step_count} action={action_str} "
                 f"reward={reward_val:.2f} done={done_str} error={error_str}"
             )
-            last_error = None  # reset after reporting
+            last_error = None
 
         success = True
 
     except Exception as exc:  # noqa: BLE001
         last_error = str(exc)
-        error_str = last_error if last_error else "null"
         print(
             f"[STEP]  step={step_count + 1} action=null "
-            f"reward=0.00 done=true error={error_str}"
+            f"reward=0.00 done=true error={last_error}"
         )
 
     rewards_str = ",".join(f"{r:.2f}" for r in step_rewards) if step_rewards else "0.00"
@@ -197,7 +193,7 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
