@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from inference import build_prompt, load_env_vars, parse_llm_response
+from src.models import Observation
 
 
 # ---------------------------------------------------------------------------
@@ -39,16 +40,14 @@ def test_missing_one_env_var_exits(monkeypatch):
 
 
 def test_all_env_vars_present_returns_values(monkeypatch):
-    """API_KEY set → returns the four values."""
+    """API_KEY set → returns the three values (LLM url, model, key)."""
     monkeypatch.setenv("API_BASE_URL", "http://llm-proxy:8000")
-    monkeypatch.setenv("ENV_BASE_URL", "http://env-server:7860")
     monkeypatch.setenv("MODEL_NAME", "test-model")
     monkeypatch.setenv("API_KEY", "test-api-key")
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
-    llm_base_url, env_base_url, model_name, api_key = load_env_vars()
+    llm_base_url, model_name, api_key = load_env_vars()
     assert llm_base_url == "http://llm-proxy:8000"
-    assert env_base_url == "http://env-server:7860"
     assert model_name == "test-model"
     assert api_key == "test-api-key"
 
@@ -69,17 +68,17 @@ def test_missing_env_var_error_message_is_descriptive(monkeypatch, capsys):
 # Tests for build_prompt — returns non-empty string
 # ---------------------------------------------------------------------------
 
-SAMPLE_OBSERVATION = {
-    "pr_title": "Fix off-by-one error in loop",
-    "pr_description": "Fixes the loop boundary condition",
-    "diff": "- for i in range(n):\n+ for i in range(n + 1):",
-    "file_count": 1,
-    "additions": 1,
-    "deletions": 1,
-    "step_number": 0,
-    "task_difficulty": "easy",
-    "episode_id": "test-episode-id",
-}
+SAMPLE_OBSERVATION = Observation(
+    pr_title="Fix off-by-one error in loop",
+    pr_description="Fixes the loop boundary condition",
+    diff="- for i in range(n):\n+ for i in range(n + 1):",
+    file_count=1,
+    additions=1,
+    deletions=1,
+    step_number=0,
+    task_difficulty="easy",
+    episode_id="test-episode-id",
+)
 
 
 def test_build_prompt_returns_non_empty_string():
@@ -92,13 +91,13 @@ def test_build_prompt_returns_non_empty_string():
 def test_build_prompt_includes_pr_title():
     """build_prompt includes the PR title in the output."""
     prompt = build_prompt(SAMPLE_OBSERVATION)
-    assert SAMPLE_OBSERVATION["pr_title"] in prompt
+    assert SAMPLE_OBSERVATION.pr_title in prompt
 
 
 def test_build_prompt_includes_diff():
     """build_prompt includes the diff content."""
     prompt = build_prompt(SAMPLE_OBSERVATION)
-    assert SAMPLE_OBSERVATION["diff"] in prompt
+    assert SAMPLE_OBSERVATION.diff in prompt
 
 
 # ---------------------------------------------------------------------------

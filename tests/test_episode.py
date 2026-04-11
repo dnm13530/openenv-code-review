@@ -4,11 +4,10 @@
 """
 
 import pytest
-from fastapi import HTTPException
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from src.episode import EpisodeManager
+from src.episode import EpisodeManager, EpisodeStateError
 from src.models import Action, DecisionEnum, InlineComment
 
 # ---------------------------------------------------------------------------
@@ -53,7 +52,12 @@ terminal_action_st = st.builds(
 )
 @settings(max_examples=100)
 def test_done_flag_is_monotonic(difficulty, terminal_action, followup_action):
-    """Once done=True, any subsequent step() raises HTTP 400."""
+    """Once done=True, any subsequent step() raises EpisodeStateError.
+
+    The FastAPI layer in src/main.py translates EpisodeStateError to HTTP 400;
+    the episode module itself stays free of any fastapi dependency so it can
+    be imported by inference.py in the validator's minimal runtime.
+    """
     em = EpisodeManager()
     em.reset(difficulty)
 
@@ -61,10 +65,9 @@ def test_done_flag_is_monotonic(difficulty, terminal_action, followup_action):
     _, _, done, _ = em.step(terminal_action)
     assert done is True
 
-    # Any further step must raise HTTP 400
-    with pytest.raises(HTTPException) as exc_info:
+    # Any further step must raise EpisodeStateError
+    with pytest.raises(EpisodeStateError):
         em.step(followup_action)
-    assert exc_info.value.status_code == 400
 
 
 # ---------------------------------------------------------------------------

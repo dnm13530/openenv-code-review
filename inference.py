@@ -5,37 +5,41 @@ Environment variables:
   MODEL_NAME    - Model identifier (default: gpt-4.1-mini)
   API_KEY       - API key for LLM proxy (injected by validator)
   HF_TOKEN      - Fallback API key for local use
-  ENV_BASE_URL  - URL of the OpenEnv server (default: https://dnm13530-openenv-code-review.hf.space)
 
 Output format:
   [START] task=<task_name> env=<benchmark> model=<model_name>
   [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
   [END]   success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+
+Note: The environment is used IN-PROCESS via EpisodeManager (no HTTP). This
+removes network dependency on a remote env server and guarantees that LLM
+calls through the validator's proxy are reliably exercised.
 """
 
 import json
 import os
 import sys
-import urllib.request
-import urllib.error
 from typing import Optional
 
+# Ensure the repo root is on sys.path so `src` is importable regardless of cwd
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 from openai import OpenAI
+
+from src.episode import EpisodeManager
+from src.models import Action, DecisionEnum, InlineComment, Observation
 
 
 # ---------------------------------------------------------------------------
 # Environment variables
 # ---------------------------------------------------------------------------
 
-def load_env_vars() -> tuple[str, str, str, str]:
-    """Return (llm_base_url, env_base_url, model_name, api_key)."""
+def load_env_vars() -> tuple[str, str, str]:
+    """Return (llm_base_url, model_name, api_key)."""
     # LLM proxy — validator injects this
     llm_base_url = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-
-    # OpenEnv server — our HF Space
-    env_base_url = os.getenv(
-        "ENV_BASE_URL", "https://dnm13530-openenv-code-review.hf.space"
-    )
 
     model_name = os.getenv("MODEL_NAME", "gpt-4.1-mini")
 
@@ -46,7 +50,6 @@ def load_env_vars() -> tuple[str, str, str, str]:
         print(
             "Error: API_KEY (or HF_TOKEN) environment variable is required.\n"
             "  API_BASE_URL  - LLM proxy endpoint (injected by validator)\n"
-            "  ENV_BASE_URL  - OpenEnv server URL (default: HF Space URL)\n"
             "  MODEL_NAME    - Model identifier (default: gpt-4.1-mini)\n"
             "  API_KEY       - API key injected by the validator\n"
             "  HF_TOKEN      - Hugging Face API token (fallback for local use)",
@@ -54,40 +57,23 @@ def load_env_vars() -> tuple[str, str, str, str]:
         )
         sys.exit(1)
 
-    return llm_base_url, env_base_url, model_name, api_key
-
-
-# ---------------------------------------------------------------------------
-# HTTP helpers using stdlib urllib (no external dependencies)
-# ---------------------------------------------------------------------------
-
-def _http_post(url: str, body: dict, timeout: int = 30) -> dict:
-    """POST JSON to url, return parsed response dict."""
-    data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    return llm_base_url, model_name, api_key
 
 
 # ---------------------------------------------------------------------------
 # Prompt building
 # ---------------------------------------------------------------------------
 
-def build_prompt(observation: dict) -> str:
-    """Build a prompt string from an Observation dict."""
+def build_prompt(observation: Observation) -> str:
+    """Build a prompt string from an Observation."""
     return (
         f"You are a code reviewer. Review the following pull request and provide feedback.\n\n"
-        f"PR Title: {observation['pr_title']}\n"
-        f"PR Description: {observation['pr_description']}\n"
-        f"Difficulty: {observation['task_difficulty']}\n"
-        f"Files changed: {observation['file_count']} "
-        f"(+{observation['additions']} -{observation['deletions']})\n\n"
-        f"Diff:\n{observation['diff']}\n\n"
+        f"PR Title: {observation.pr_title}\n"
+        f"PR Description: {observation.pr_description}\n"
+        f"Difficulty: {observation.task_difficulty}\n"
+        f"Files changed: {observation.file_count} "
+        f"(+{observation.additions} -{observation.deletions})\n\n"
+        f"Diff:\n{observation.diff}\n\n"
         f"Respond with a JSON object with these fields:\n"
         f"  decision: one of 'approve', 'request_changes', or 'comment'\n"
         f"  review_body: your review text (max 4000 chars)\n"
@@ -103,7 +89,7 @@ def build_prompt(observation: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def parse_llm_response(response_text: str) -> Optional[dict]:
-    """Parse LLM response text into an Action dict. Returns None on failure."""
+    """Parse LLM response text into an action dict. Returns None on failure."""
     text = response_text.strip()
 
     if text.startswith("```"):
@@ -138,13 +124,36 @@ def parse_llm_response(response_text: str) -> Optional[dict]:
     return data
 
 
+def action_from_dict(data: dict) -> Action:
+    """Construct an Action model from a parsed dict."""
+    inline_raw = data.get("inline_comments") or []
+    inline_comments: list[InlineComment] = []
+    if isinstance(inline_raw, list):
+        for item in inline_raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                inline_comments.append(
+                    InlineComment(
+                        file_path=str(item.get("file_path", "")),
+                        line_number=int(item.get("line_number", 0)),
+                        body=str(item.get("body", "")),
+                    )
+                )
+            except (ValueError, TypeError):
+                continue
+    return Action(
+        decision=DecisionEnum(data["decision"]),
+        review_body=data.get("review_body", "")[:4000],
+        inline_comments=inline_comments or None,
+    )
+
+
 # ---------------------------------------------------------------------------
-# Episode runner
+# Episode runner (in-process environment)
 # ---------------------------------------------------------------------------
 
-def run_episode(
-    env_base_url: str, client: OpenAI, model_name: str, difficulty: str
-) -> None:
+def run_episode(client: OpenAI, model_name: str, difficulty: str) -> None:
     """Run a single episode, printing required [START]/[STEP]/[END] output lines."""
     task_name = f"code-review-{difficulty}"
     step_rewards: list[float] = []
@@ -154,8 +163,11 @@ def run_episode(
 
     print(f"[START] task={task_name} env=openenv-code-review model={model_name}")
 
+    # Use a fresh EpisodeManager per episode — avoids any cross-episode state
+    manager = EpisodeManager()
+
     try:
-        observation = _http_post(f"{env_base_url}/reset", {"difficulty": difficulty})
+        observation = manager.reset(difficulty)
         done = False
 
         while not done:
@@ -170,21 +182,20 @@ def run_episode(
             )
             response_text = completion.choices[0].message.content or ""
 
-            action = parse_llm_response(response_text)
-            if action is None:
+            parsed = parse_llm_response(response_text)
+            if parsed is None:
                 last_error = "Failed to parse LLM response"
-                action = {
+                parsed = {
                     "decision": "request_changes",
                     "review_body": "Unable to parse LLM response. Requesting changes as a precaution.",
                 }
 
-            action_str = action["decision"]
-            # Env step goes to our HF Space server
-            step_data = _http_post(f"{env_base_url}/step", action)
+            action = action_from_dict(parsed)
+            action_str = action.decision.value
 
-            observation = step_data["observation"]
-            reward_val = step_data["reward"]["score"]
-            done = step_data["done"]
+            # Env step runs in-process via EpisodeManager
+            observation, reward, done, _info = manager.step(action)
+            reward_val = reward.score
             step_rewards.append(reward_val)
 
             done_str = "true" if done else "false"
@@ -198,9 +209,13 @@ def run_episode(
         success = True
 
     except Exception as exc:  # noqa: BLE001
+        # step_count is incremented at the top of the while-loop before the LLM
+        # call, so by the time an exception fires it already reflects the
+        # in-flight step. For errors thrown by reset() (before any step ran),
+        # fall back to 1 so we never emit "step=0".
         last_error = str(exc)
         print(
-            f"[STEP]  step={step_count + 1} action=null "
+            f"[STEP]  step={step_count or 1} action=null "
             f"reward=0.00 done=true error={last_error}"
         )
 
@@ -214,13 +229,13 @@ def run_episode(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    llm_base_url, env_base_url, model_name, api_key = load_env_vars()
+    llm_base_url, model_name, api_key = load_env_vars()
 
-    # OpenAI client points to the LLM proxy
+    # OpenAI client points at the validator's LLM proxy
     llm_client = OpenAI(base_url=llm_base_url, api_key=api_key)
 
     for difficulty in ["easy", "medium", "hard"]:
-        run_episode(env_base_url, llm_client, model_name, difficulty)
+        run_episode(llm_client, model_name, difficulty)
 
 
 if __name__ == "__main__":

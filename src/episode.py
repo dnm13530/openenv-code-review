@@ -1,11 +1,20 @@
 """Episode Manager for the OpenEnv code review environment."""
 
 import uuid
-from fastapi import HTTPException
 
 from src.models import Action, DecisionEnum, Observation, Reward, StateSnapshot
 from src.tasks import TaskDefinition, get_task
 from src.grader import grade
+
+
+class EpisodeStateError(RuntimeError):
+    """Raised when an episode operation is invalid for the current state.
+
+    Kept as a plain runtime error (no fastapi dependency) so this module can
+    be imported in lightweight environments such as the validator harness
+    running inference.py. The FastAPI layer in src/main.py translates this
+    to HTTP 400.
+    """
 
 
 class EpisodeManager:
@@ -39,15 +48,13 @@ class EpisodeManager:
         Sets done=True when the action is a terminal decision (approve / request_changes).
         """
         if self.done:
-            raise HTTPException(
-                status_code=400,
-                detail="Episode is already done. Call /reset to start a new episode.",
+            raise EpisodeStateError(
+                "Episode is already done. Call reset to start a new episode."
             )
 
         if self.current_task is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No active episode. Call /reset to start a new episode.",
+            raise EpisodeStateError(
+                "No active episode. Call reset to start a new episode."
             )
 
         reward = grade(self.current_task, action, self.step_number)

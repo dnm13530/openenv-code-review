@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
-from src.episode import EpisodeManager
+from src.episode import EpisodeManager, EpisodeStateError
 from src.models import Action, Observation, StateSnapshot, StepResponse
 
 app = FastAPI(title="openenv-code-review", version="1.0.0")
@@ -69,7 +69,10 @@ async def reset(request: ResetRequest = ResetRequest()) -> Observation:
 @app.post("/step", response_model=StepResponse)
 async def step(action: Action) -> StepResponse:
     """Advance the episode by one step and return the result."""
-    observation, reward, done, info = _episode_manager.step(action)
+    try:
+        observation, reward, done, info = _episode_manager.step(action)
+    except EpisodeStateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return StepResponse(observation=observation, reward=reward, done=done, info=info)
 
 
