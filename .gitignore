@@ -28,6 +28,9 @@ htmlcov/
 # Kiro specs (internal planning, not needed in HF Space)
 .kiro/
 
+# Claude Code local dev tool (not part of the project)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
