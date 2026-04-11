@@ -1,9 +1,13 @@
 """Baseline inference script for the openenv-code-review environment.
 
-Reads API_BASE_URL, MODEL_NAME, HF_TOKEN from environment variables and runs
-one episode per difficulty level using an OpenAI-compatible LLM client.
+Environment variables:
+  API_BASE_URL  - LLM proxy endpoint (injected by validator, default: https://api.openai.com/v1)
+  MODEL_NAME    - Model identifier (default: gpt-4.1-mini)
+  API_KEY       - API key for LLM proxy (injected by validator)
+  HF_TOKEN      - Fallback API key for local use
+  ENV_BASE_URL  - URL of the OpenEnv server (default: https://dnm13530-openenv-code-review.hf.space)
 
-Output format (per hackathon spec):
+Output format:
   [START] task=<task_name> env=<benchmark> model=<model_name>
   [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
   [END]   success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
@@ -20,12 +24,19 @@ from openai import OpenAI
 
 
 # ---------------------------------------------------------------------------
-# Environment variables — defaults for API_BASE_URL and MODEL_NAME only
+# Environment variables
 # ---------------------------------------------------------------------------
 
-def load_env_vars() -> tuple[str, str, str]:
-    """Return (API_BASE_URL, MODEL_NAME, api_key). Exits with code 1 if no API key found."""
-    api_base_url = os.getenv("API_BASE_URL", "http://localhost:7860")
+def load_env_vars() -> tuple[str, str, str, str]:
+    """Return (llm_base_url, env_base_url, model_name, api_key)."""
+    # LLM proxy — validator injects this
+    llm_base_url = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+
+    # OpenEnv server — our HF Space
+    env_base_url = os.getenv(
+        "ENV_BASE_URL", "https://dnm13530-openenv-code-review.hf.space"
+    )
+
     model_name = os.getenv("MODEL_NAME", "gpt-4.1-mini")
 
     # Validator injects API_KEY; fall back to HF_TOKEN for local use
@@ -34,7 +45,8 @@ def load_env_vars() -> tuple[str, str, str]:
     if not api_key:
         print(
             "Error: API_KEY (or HF_TOKEN) environment variable is required.\n"
-            "  API_BASE_URL  - LLM endpoint (default: http://localhost:7860)\n"
+            "  API_BASE_URL  - LLM proxy endpoint (injected by validator)\n"
+            "  ENV_BASE_URL  - OpenEnv server URL (default: HF Space URL)\n"
             "  MODEL_NAME    - Model identifier (default: gpt-4.1-mini)\n"
             "  API_KEY       - API key injected by the validator\n"
             "  HF_TOKEN      - Hugging Face API token (fallback for local use)",
@@ -42,7 +54,7 @@ def load_env_vars() -> tuple[str, str, str]:
         )
         sys.exit(1)
 
-    return api_base_url, model_name, api_key
+    return llm_base_url, env_base_url, model_name, api_key
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +106,6 @@ def parse_llm_response(response_text: str) -> Optional[dict]:
     """Parse LLM response text into an Action dict. Returns None on failure."""
     text = response_text.strip()
 
-    # Strip markdown code fences if present
     if text.startswith("```"):
         lines = text.split("\n")
         inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
@@ -128,10 +139,12 @@ def parse_llm_response(response_text: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Episode runner — emits [START], [STEP], [END] lines
+# Episode runner
 # ---------------------------------------------------------------------------
 
-def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: str) -> None:
+def run_episode(
+    env_base_url: str, client: OpenAI, model_name: str, difficulty: str
+) -> None:
     """Run a single episode, printing required [START]/[STEP]/[END] output lines."""
     task_name = f"code-review-{difficulty}"
     step_rewards: list[float] = []
@@ -149,6 +162,7 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
             step_count += 1
             prompt = build_prompt(observation)
 
+            # LLM call goes through the validator's proxy via the OpenAI client
             completion = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
@@ -165,6 +179,7 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
                 }
 
             action_str = action["decision"]
+            # Env step goes to our HF Space server
             step_data = _http_post(f"{env_base_url}/step", action)
 
             observation = step_data["observation"]
@@ -199,11 +214,13 @@ def run_episode(env_base_url: str, client: OpenAI, model_name: str, difficulty: 
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    api_base_url, model_name, api_key = load_env_vars()
-    llm_client = OpenAI(base_url=api_base_url, api_key=api_key)
+    llm_base_url, env_base_url, model_name, api_key = load_env_vars()
+
+    # OpenAI client points to the LLM proxy
+    llm_client = OpenAI(base_url=llm_base_url, api_key=api_key)
 
     for difficulty in ["easy", "medium", "hard"]:
-        run_episode(api_base_url, llm_client, model_name, difficulty)
+        run_episode(env_base_url, llm_client, model_name, difficulty)
 
 
 if __name__ == "__main__":

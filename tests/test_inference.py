@@ -39,14 +39,16 @@ def test_missing_one_env_var_exits(monkeypatch):
 
 
 def test_all_env_vars_present_returns_values(monkeypatch):
-    """API_KEY set → returns the three values."""
-    monkeypatch.setenv("API_BASE_URL", "http://localhost:8000")
+    """API_KEY set → returns the four values."""
+    monkeypatch.setenv("API_BASE_URL", "http://llm-proxy:8000")
+    monkeypatch.setenv("ENV_BASE_URL", "http://env-server:7860")
     monkeypatch.setenv("MODEL_NAME", "test-model")
     monkeypatch.setenv("API_KEY", "test-api-key")
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
-    api_base_url, model_name, api_key = load_env_vars()
-    assert api_base_url == "http://localhost:8000"
+    llm_base_url, env_base_url, model_name, api_key = load_env_vars()
+    assert llm_base_url == "http://llm-proxy:8000"
+    assert env_base_url == "http://env-server:7860"
     assert model_name == "test-model"
     assert api_key == "test-api-key"
 
