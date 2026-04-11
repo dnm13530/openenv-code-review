@@ -51,7 +51,7 @@ index 1a2b3c4..5d6e7f8 100644
     ground_truth_decision="request_changes",
     required_keywords=["off-by-one", "end + 1"],
     required_inline_file=None,
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -87,7 +87,7 @@ index 2b3c4d5..6e7f8a9 100644
     ground_truth_decision="request_changes",
     required_keywords=["sql injection", "parameterized", "f-string", "user input"],
     required_inline_file="api/search.py",
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ index 3c4d5e6..7f8a9b0 100644
     ground_truth_decision="request_changes",
     required_keywords=["n+1", "select_related", "prefetch_related", "query per", "eager loading"],
     required_inline_file=None,
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ index 4d5e6f7..8a9b0c1 100644
     ground_truth_decision="request_changes",
     required_keywords=["unused", "dead code", "unused_result"],
     required_inline_file=None,
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ index 5e6f7a8..9b0c1d2 100644
     ground_truth_decision="request_changes",
     required_keywords=["division by zero", "zero", "ZeroDivisionError", "validate"],
     required_inline_file=None,
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -247,7 +247,7 @@ index 6f7a8b9..0c1d2e3 100644
     ground_truth_decision="request_changes",
     required_keywords=["hardcoded", "secret", "environment variable", "credentials"],
     required_inline_file="services/email.py",
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -287,7 +287,7 @@ index 7a8b9c0..1d2e3f4 100644
     ground_truth_decision="request_changes",
     required_keywords=["race condition", "thread", "atomic", "lock", "concurrent"],
     required_inline_file="downloads/tracker.py",
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -337,7 +337,7 @@ index 8b9c0d1..2e3f4a5 100644
     ground_truth_decision="request_changes",
     required_keywords=["index", "db_index", "missing index", "full table scan", "query performance"],
     required_inline_file=None,
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
@@ -386,7 +386,7 @@ index 9c0d1e2..3f4a5b6 100644
     ground_truth_decision="request_changes",
     required_keywords=["memory", "pagination", "streaming", "unbounded", "batch"],
     required_inline_file=None,
-    rubric={"decision_correctness": 1.0, "issue_identification": 0.5, "review_quality": 0.5},
+    rubric={"decision_correctness": 0.4, "issue_identification": 0.4, "review_quality": 0.2},
 )
 
 # ---------------------------------------------------------------------------
