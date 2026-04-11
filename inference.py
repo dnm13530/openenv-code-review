@@ -8,8 +8,14 @@ Environment variables:
 
 Output format:
   [START] task=<task_name> env=<benchmark> model=<model_name>
-  [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+  [STEP]  step=<n> action=<action_str> reward=<0.XXXX> done=<true|false> error=<msg|null>
   [END]   success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+
+Reward formatting note: rewards are printed with 4-decimal precision. The
+OpenEnv validator requires every task score to fall *strictly* inside the
+open interval (0, 1). Printing with .2f would round the grader's clamped
+bounds (0.0001 and 0.9999) back to "0.00" and "1.00", re-introducing the
+forbidden boundary values at the print layer.
 
 Note: The environment is used IN-PROCESS via EpisodeManager (no HTTP). This
 removes network dependency on a remote env server and guarantees that LLM
@@ -29,7 +35,17 @@ if _REPO_ROOT not in sys.path:
 from openai import OpenAI
 
 from src.episode import EpisodeManager
+from src.grader import _EPSILON  # strict-clamp floor used for fallback rewards
 from src.models import Action, DecisionEnum, InlineComment, Observation
+
+
+# Format string for rewards. Must use enough precision that the grader's
+# clamped bounds (_EPSILON and 1 - _EPSILON, currently 1e-4) do not round
+# to the forbidden exact boundaries 0.00 or 1.00 when printed.
+_REWARD_FMT = ".4f"
+# Fallback reward emitted for failed / exceptional steps. Must be strictly
+# inside (0, 1) since the validator parses these printed values.
+_FALLBACK_REWARD_STR = f"{_EPSILON:{_REWARD_FMT}}"
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +218,7 @@ def run_episode(client: OpenAI, model_name: str, difficulty: str) -> None:
             error_str = last_error if last_error else "null"
             print(
                 f"[STEP]  step={step_count} action={action_str} "
-                f"reward={reward_val:.2f} done={done_str} error={error_str}"
+                f"reward={reward_val:{_REWARD_FMT}} done={done_str} error={error_str}"
             )
             last_error = None
 
@@ -216,10 +232,16 @@ def run_episode(client: OpenAI, model_name: str, difficulty: str) -> None:
         last_error = str(exc)
         print(
             f"[STEP]  step={step_count or 1} action=null "
-            f"reward=0.00 done=true error={last_error}"
+            f"reward={_FALLBACK_REWARD_STR} done=true error={last_error}"
         )
 
-    rewards_str = ",".join(f"{r:.2f}" for r in step_rewards) if step_rewards else "0.00"
+    # Validator requires every printed reward to be strictly inside (0, 1),
+    # so the empty fallback cannot be "0.00" (parses as exact zero).
+    rewards_str = (
+        ",".join(f"{r:{_REWARD_FMT}}" for r in step_rewards)
+        if step_rewards
+        else _FALLBACK_REWARD_STR
+    )
     success_str = "true" if success else "false"
     print(f"[END]   success={success_str} steps={step_count} rewards={rewards_str}")
 
