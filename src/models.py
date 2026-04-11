@@ -40,8 +40,14 @@ class Action(BaseModel):
 
 
 class Reward(BaseModel):
-    """Reward signal with score, rationale, and breakdown."""
-    score: float = Field(..., ge=0.0, le=1.0)
+    """Reward signal with score, rationale, and breakdown.
+
+    `score` must lie strictly inside the open interval (0.0, 1.0). This
+    matches the OpenEnv validator's Phase-2 requirement that task scores be
+    neither exactly 0.0 nor exactly 1.0. The grader in src/grader.py clamps
+    its outputs to [_EPSILON, 1 - _EPSILON] to satisfy this invariant.
+    """
+    score: float = Field(..., gt=0.0, lt=1.0)
     rationale: str
     breakdown: dict[str, float]
 

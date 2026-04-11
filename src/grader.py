@@ -4,12 +4,37 @@ from src.models import Action, DecisionEnum, Reward
 from src.tasks import TaskDefinition
 
 
+# ---------------------------------------------------------------------------
+# Score bounds
+# ---------------------------------------------------------------------------
+#
+# The OpenEnv validator (Meta PyTorch Hackathon Phase 2 deep validation)
+# requires that every task score fall *strictly* inside the open interval
+# (0.0, 1.0) — exact 0.0 and exact 1.0 are both rejected. We therefore clamp
+# the final score to [_EPSILON, 1.0 - _EPSILON]. The epsilon is small enough
+# that scoring semantics are preserved (a wrong decision still scores near
+# zero; a perfect review still scores near one) but large enough to display
+# unambiguously at 4-decimal precision.
+_EPSILON: float = 1e-4
+_MIN_SCORE: float = _EPSILON
+_MAX_SCORE: float = 1.0 - _EPSILON
+
+
+def _strict_clamp(score: float) -> float:
+    """Clamp score into the strict open interval (0, 1) as [_EPSILON, 1 - _EPSILON]."""
+    if score < _MIN_SCORE:
+        return _MIN_SCORE
+    if score > _MAX_SCORE:
+        return _MAX_SCORE
+    return score
+
+
 def grade(task: TaskDefinition, action: Action, step_number: int) -> Reward:
     """Grade an agent's action against the task rubric.
 
-    Returns a Reward with score in [0.0, 1.0], a rationale string, and a
-    breakdown dict with keys: decision_correctness, issue_identification,
-    review_quality.
+    Returns a Reward with score strictly inside (0.0, 1.0) — clamped to
+    [_EPSILON, 1 - _EPSILON] — a rationale string, and a breakdown dict with
+    keys: decision_correctness, issue_identification, review_quality.
     """
     # ------------------------------------------------------------------
     # Intermediate reward for 'comment' actions (not a terminal decision)
@@ -30,9 +55,9 @@ def grade(task: TaskDefinition, action: Action, step_number: int) -> Reward:
         }
         rationale = (
             f"Incorrect decision '{action.decision.value}'; "
-            f"expected '{task.ground_truth_decision}'. Score: 0.0."
+            f"expected '{task.ground_truth_decision}'. Score: {_MIN_SCORE}."
         )
-        return Reward(score=0.0, rationale=rationale, breakdown=breakdown)
+        return Reward(score=_MIN_SCORE, rationale=rationale, breakdown=breakdown)
 
     issue_identification = _score_issue_identification(task, action)
     review_quality = _score_review_quality(task, action)
@@ -42,8 +67,10 @@ def grade(task: TaskDefinition, action: Action, step_number: int) -> Reward:
         + issue_identification * 0.4
         + review_quality * 0.2
     )
-    # Clamp to [0.0, 1.0] to guard against floating-point drift
-    score = max(0.0, min(1.0, score))
+    # Clamp to the strict open interval (0, 1). The validator rejects
+    # exact 0.0 and exact 1.0, so we collapse those boundaries to _EPSILON
+    # and 1 - _EPSILON respectively.
+    score = _strict_clamp(score)
 
     breakdown = {
         "decision_correctness": decision_correctness,
@@ -201,4 +228,7 @@ def _grade_comment(task: TaskDefinition, action: Action, step_number: int) -> Re
         "review_quality": 0.5 if has_inline else 0.0,
     }
 
-    return Reward(score=score, rationale=rationale, breakdown=breakdown)
+    # Belt-and-braces: ensure intermediate comment rewards are also strictly
+    # inside (0, 1). The hardcoded values above (0.1..0.4) already satisfy
+    # this, but clamping defends against future edits.
+    return Reward(score=_strict_clamp(score), rationale=rationale, breakdown=breakdown)
